@@ -5,6 +5,21 @@
 import dataErasure from './routes/dataErasure'
 import fs = require('fs')
 import { Request, Response, NextFunction } from 'express'
+import { sequelize } from './models'
+import { UserModel } from './models/user'
+import { QuantityModel } from './models/quantity'
+import { CardModel } from './models/card'
+import { PrivacyRequestModel } from './models/privacyRequests'
+import { AddressModel } from './models/address'
+import { SecurityAnswerModel } from './models/securityAnswer'
+import { SecurityQuestionModel } from './models/securityQuestion'
+import { RecycleModel } from './models/recycle'
+import { ComplaintModel } from './models/complaint'
+import { ChallengeModel } from './models/challenge'
+import { BasketItemModel } from './models/basketitem'
+import { FeedbackModel } from './models/feedback'
+import { ProductModel } from './models/product'
+import { WalletModel } from './models/wallet'
 const startTime = Date.now()
 const path = require('path')
 const morgan = require('morgan')
@@ -25,6 +40,7 @@ const yaml = require('js-yaml')
 const swaggerUi = require('swagger-ui-express')
 const RateLimit = require('express-rate-limit')
 const client = require('prom-client')
+const ipfilter = require('express-ipfilter').IpFilter
 const swaggerDocument = yaml.load(fs.readFileSync('./swagger.yml', 'utf8'))
 const {
   ensureFileIsPassed,
@@ -71,7 +87,6 @@ const likeProductReviews = require('./routes/likeProductReviews')
 const logger = require('./lib/logger')
 const utils = require('./lib/utils')
 const security = require('./lib/insecurity')
-const models = require('./models')
 const datacreator = require('./data/datacreator')
 const app = express()
 const server = require('http').Server(app)
@@ -155,6 +170,12 @@ restoreOverwrittenFilesWithOriginals().then(() => {
     }
   }))
 
+  /* Hiring header */
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    res.append('X-Recruiting', config.get('application.securityTxt.hiring'))
+    next()
+  })
+
   /* Remove duplicate slashes from URL which allowed bypassing subsequent filters */
   app.use((req: Request, res: Response, next: NextFunction) => {
     req.url = req.url.replace(/[/]+/g, '/')
@@ -173,6 +194,7 @@ restoreOverwrittenFilesWithOriginals().then(() => {
     encryption: config.get('application.securityTxt.encryption'),
     acknowledgements: config.get('application.securityTxt.acknowledgements'),
     'Preferred-Languages': [...new Set(locales.map((locale: { key: string }) => locale.key.substr(0, 2)))].join(', '),
+    hiring: config.get('application.securityTxt.hiring'),
     expires: securityTxtExpiration.toUTCString()
   }))
 
@@ -258,12 +280,16 @@ restoreOverwrittenFilesWithOriginals().then(() => {
     // @ts-expect-error
     req.rawBody = req.body
     if (req.headers['content-type']?.includes('application/json')) {
-      if (req.body && req.body !== Object(req.body)) { // Expensive workaround for 500 errors during Frisby test run (see #640)
+      if (!req.body) {
+        req.body = {}
+      }
+      if (req.body !== Object(req.body)) { // Expensive workaround for 500 errors during Frisby test run (see #640)
         req.body = JSON.parse(req.body)
       }
     }
     next()
   })
+
   /* HTTP request logging */
   const accessLogStream = require('file-stream-rotator').getStream({
     filename: path.resolve('logs/access.log'),
@@ -345,7 +371,7 @@ restoreOverwrittenFilesWithOriginals().then(() => {
   /* Accounting users are allowed to check and update quantities */
   app.delete('/api/Quantitys/:id', security.denyAll())
   app.post('/api/Quantitys', security.denyAll())
-  app.use('/api/Quantitys/:id', security.isAccounting())
+  app.use('/api/Quantitys/:id', security.isAccounting(), ipfilter(['123.456.789'], { mode: 'allow' }))
   /* Feedbacks: Do not allow changes of existing feedback */
   app.put('/api/Feedbacks/:id', security.denyAll())
   /* PrivacyRequests: Only allowed for authenticated users */
@@ -395,27 +421,27 @@ restoreOverwrittenFilesWithOriginals().then(() => {
 
   // vuln-code-snippet start registerAdminChallenge
   /* Generated API endpoints */
-  finale.initialize({ app, sequelize: models.sequelize })
+  finale.initialize({ app, sequelize })
 
   const autoModels = [
-    { name: 'User', exclude: ['password', 'totpSecret'] },
-    { name: 'Product', exclude: [] },
-    { name: 'Feedback', exclude: [] },
-    { name: 'BasketItem', exclude: [] },
-    { name: 'Challenge', exclude: [] },
-    { name: 'Complaint', exclude: [] },
-    { name: 'Recycle', exclude: [] },
-    { name: 'SecurityQuestion', exclude: [] },
-    { name: 'SecurityAnswer', exclude: [] },
-    { name: 'Address', exclude: [] },
-    { name: 'PrivacyRequest', exclude: [] },
-    { name: 'Card', exclude: [] },
-    { name: 'Quantity', exclude: [] }
+    { name: 'User', exclude: ['password', 'totpSecret'], model: UserModel },
+    { name: 'Product', exclude: [], model: ProductModel },
+    { name: 'Feedback', exclude: [], model: FeedbackModel },
+    { name: 'BasketItem', exclude: [], model: BasketItemModel },
+    { name: 'Challenge', exclude: [], model: ChallengeModel },
+    { name: 'Complaint', exclude: [], model: ComplaintModel },
+    { name: 'Recycle', exclude: [], model: RecycleModel },
+    { name: 'SecurityQuestion', exclude: [], model: SecurityQuestionModel },
+    { name: 'SecurityAnswer', exclude: [], model: SecurityAnswerModel },
+    { name: 'Address', exclude: [], model: AddressModel },
+    { name: 'PrivacyRequest', exclude: [], model: PrivacyRequestModel },
+    { name: 'Card', exclude: [], model: CardModel },
+    { name: 'Quantity', exclude: [], model: QuantityModel }
   ]
 
-  for (const { name, exclude } of autoModels) {
+  for (const { name, exclude, model } of autoModels) {
     const resource = finale.resource({
-      model: models[name],
+      model,
       endpoints: [`/api/${name}s`, `/api/${name}s/:id`],
       excludeAttributes: exclude
     })
@@ -423,7 +449,7 @@ restoreOverwrittenFilesWithOriginals().then(() => {
     // create a wallet when a new user is registered using API
     if (name === 'User') { // vuln-code-snippet neutral-line registerAdminChallenge
       resource.create.send.before((req: Request, res: Response, context: { instance: { id: any }, continue: any }) => { // vuln-code-snippet vuln-line registerAdminChallenge
-        models.Wallet.create({ UserId: context.instance.id }).catch((err: unknown) => {
+        WalletModel.create({ UserId: context.instance.id }).catch((err: unknown) => {
           console.log(err)
         })
         return context.continue // vuln-code-snippet neutral-line registerAdminChallenge
@@ -609,24 +635,32 @@ const uploadToDisk = multer({
   })
 })
 
+const expectedModels = ['Address', 'Basket', 'BasketItem', 'Captcha', 'Card', 'Challenge', 'Complaint', 'Delivery', 'Feedback', 'ImageCaptcha', 'Memory', 'PrivacyRequestModel', 'Product', 'Quantity', 'Recycle', 'SecurityAnswer', 'SecurityQuestion', 'User', 'Wallet']
+while (!expectedModels.every(model => Object.keys(sequelize.models).includes(model))) {
+  logger.info(`Entity models ${colors.bold(Object.keys(sequelize.models).length)} of ${colors.bold(expectedModels.length)} are initialized (${colors.yellow('WAITING')})`)
+}
+logger.info(`Entity models ${colors.bold(Object.keys(sequelize.models).length)} of ${colors.bold(expectedModels.length)} are initialized (${colors.green('OK')})`)
+
 // vuln-code-snippet start exposedMetricsChallenge
 /* Serve metrics */
+let metricsUpdateLoop
 const Metrics = metrics.observeMetrics() // vuln-code-snippet neutral-line exposedMetricsChallenge
-const metricsUpdateLoop = Metrics.updateLoop // vuln-code-snippet neutral-line exposedMetricsChallenge
+const customizeEasterEgg = require('./lib/startup/customizeEasterEgg') // vuln-code-snippet hide-line
 app.get('/metrics', metrics.serveMetrics()) // vuln-code-snippet vuln-line exposedMetricsChallenge
 errorhandler.title = `${config.get('application.name')} (Express ${utils.version('express')})`
 
 const registerWebsocketEvents = require('./lib/startup/registerWebsocketEvents')
 const customizeApplication = require('./lib/startup/customizeApplication')
-const customizeEasterEgg = require('./lib/startup/customizeEasterEgg') // vuln-code-snippet hide-line
 
 export async function start (readyCallback: Function) {
   const datacreatorEnd = startupGauge.startTimer({ task: 'datacreator' })
-  await models.sequelize.sync({ force: true })
+  await sequelize.sync({ force: true })
   await datacreator()
   datacreatorEnd()
   const port = process.env.PORT ?? config.get('server.port')
   process.env.BASE_PATH = process.env.BASE_PATH ?? config.get('server.basePath')
+
+  metricsUpdateLoop = Metrics.updateLoop() // vuln-code-snippet neutral-line exposedMetricsChallenge
 
   server.listen(port, () => {
     logger.info(colors.cyan(`Server listening on port ${colors.bold(port)}`))
@@ -654,3 +688,7 @@ export function close (exitCode: number | undefined) {
   }
 }
 // vuln-code-snippet end exposedMetricsChallenge
+
+// stop server on sigint or sigterm signals
+process.on('SIGINT', () => close(0))
+process.on('SIGTERM', () => close(0))
