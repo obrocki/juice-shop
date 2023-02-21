@@ -256,6 +256,10 @@ mentioned or used!
 ### [Google Summer of Code](http://owasp.org/gsoc)
 
 * Student project from
+  [Google Summer of Code 2022](https://summerofcode.withgoogle.com/archive/2022/projects)
+    * [Replacement for Protractor end-to-end & Frisby API test suite to Cypress](https://summerofcode.withgoogle.com/organizations/owasp-foundation/projects/details/2J1Xedwf)
+      by Shubham Palriwala (mentored by Jannik Hollenbach and Björn Kimminich)
+* Student project from
   [Google Summer of Code 2021](https://summerofcode.withgoogle.com/archive/2021/projects)
     * [Extending the features of the vulnerable code snippets](https://summerofcode.withgoogle.com/archive/2021/projects/5180407718346752P)
       by Ayas Behera (mentored by Jannik Hollenbach and Björn Kimminich)
@@ -275,6 +279,10 @@ mentioned or used!
       by Aashish Singh (mentored by Björn Kimminich)
 
 ## Conference and Meetup Appearances
+
+#### 2023
+
+* [Squeezing the last drop out of OWASP Juice Shop](https://owasp2023globalappsecdublin.sched.com/event/1FWfq/squeezing-the-last-drop-out-of-owasp-juice-shop) by Björn Kimminich, [OWASP 2023 Global AppSec Dublin](https://dublin.globalappsec.org/), 15.02.2023
 
 #### 2022
 
